@@ -39,7 +39,7 @@ const unsigned long mqttUpdateInterval = 500;  // Send MQTT update every 500ms (
 const unsigned long sleepDelay = 3000;  // Time in ms before going to sleep after button release
 unsigned long buttonReleaseTime = 0;    // Time when the last button was released
 bool buttonPressed = false;             // Flag to track if any button is pressed
-bool readyToSleep = true;              // Flag to indicate ready to enter sleep
+bool readyToSleep = true;               // Flag to indicate ready to enter sleep
 
 // Wi-Fi credentials
 const char* WIFI_SSID = "the robot network";
@@ -225,10 +225,6 @@ void setup() {
 
 void loop() {
 
-  // Short delay for the loop
-  delay(50);
-  debugPrint(".");
-
   //set variables
   bool anyButtonPressed = false;
   bool buttonStateChanged = false;
@@ -328,6 +324,10 @@ void loop() {
     // Enter deep sleep
     esp_deep_sleep_start();
   }
+
+  // Short delay for the loop
+  delay(50);
+  debugPrint(".");
 }
 
 
