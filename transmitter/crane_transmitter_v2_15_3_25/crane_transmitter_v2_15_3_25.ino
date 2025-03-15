@@ -28,8 +28,8 @@ uint32_t buttonColors[] = {
 // Variables to keep track of button states
 int buttonStates[6] = { LOW, LOW, LOW, LOW, LOW, LOW };
 int lastButtonStates[6] = { LOW, LOW, LOW, LOW, LOW, LOW };
-unsigned long lastDebounceTime[6] = { 0, 0, 0, 0, 0, 0 };
-const unsigned long debounceDelay = 50;  // Debounce time in milliseconds
+//unsigned long lastDebounceTime[6] = { 0, 0, 0, 0, 0, 0 };
+//const unsigned long debounceDelay = 50;  // Debounce time in milliseconds
 
 // MQTT periodic update variables
 unsigned long lastMqttUpdateTime = 0;
@@ -39,7 +39,7 @@ const unsigned long mqttUpdateInterval = 500;  // Send MQTT update every 500ms (
 const unsigned long sleepDelay = 3000;  // Time in ms before going to sleep after button release
 unsigned long buttonReleaseTime = 0;    // Time when the last button was released
 bool buttonPressed = false;             // Flag to track if any button is pressed
-bool readyToSleep = false;              // Flag to indicate ready to enter sleep
+bool readyToSleep = true;              // Flag to indicate ready to enter sleep
 
 // Wi-Fi credentials
 const char* WIFI_SSID = "the robot network";
@@ -224,6 +224,12 @@ void setup() {
 }
 
 void loop() {
+
+  // Short delay for the loop
+  delay(50);
+  debugPrint(".");
+
+  //set variables
   bool anyButtonPressed = false;
   bool buttonStateChanged = false;
   int activeButton = -1;
@@ -234,37 +240,37 @@ void loop() {
     int reading = digitalRead(buttonPins[i]);
 
     // Check if the button state has changed
-    if (reading != lastButtonStates[i]) {
-      // Reset the debounce timer
-      lastDebounceTime[i] = millis();
-    }
+    // if (reading != lastButtonStates[i]) {
+    //   // Reset the debounce timer
+    //   lastDebounceTime[i] = millis();
+    // }
 
     // If enough time has passed, consider the state change valid
-    if ((millis() - lastDebounceTime[i]) > debounceDelay) {
-      // If the button state has changed
-      if (reading != buttonStates[i]) {
-        buttonStates[i] = reading;
-        buttonStateChanged = true;
+    //if ((millis() - lastDebounceTime[i]) > debounceDelay) {
+    // If the button state has changed
+    if (reading != buttonStates[i]) {
+      buttonStates[i] = reading;
+      buttonStateChanged = true;
 
-        // If the button is pressed (HIGH with external pull-down)
-        if (buttonStates[i] == HIGH) {
-          debugPrint("Button ");
-          debugPrint(i + 1);
-          debugPrint(" on GPIO ");
-          debugPrint(buttonPins[i]);
-          debugPrintln(" pressed");
+      // If the button is pressed (HIGH with external pull-down)
+      if (buttonStates[i] == HIGH) {
+        debugPrint("Button ");
+        debugPrint(i + 1);
+        debugPrint(" on GPIO ");
+        debugPrint(buttonPins[i]);
+        debugPrintln(" pressed");
 
-          activeButton = i;
-          anyButtonPressed = true;
-          buttonPressed = true;
-          readyToSleep = false;
+        activeButton = i;
+        anyButtonPressed = true;
+        buttonPressed = true;
+        readyToSleep = false;
 
-          // Light up the LED with the color for this button
-          strip.setPixelColor(0, buttonColors[i]);
-          strip.show();
-        }
+        // Light up the LED with the color for this button
+        strip.setPixelColor(0, buttonColors[i]);
+        strip.show();
       }
     }
+    //}
 
     // Keep track if any button is currently pressed
     if (buttonStates[i] == HIGH) {
@@ -323,3 +329,112 @@ void loop() {
     esp_deep_sleep_start();
   }
 }
+
+
+
+// void loop_OLD() {
+
+//   // Short delay for the loop
+//   delay(50);
+//   debugPrint(".");
+
+//   //set variables
+//   bool anyButtonPressed = false;
+//   bool buttonStateChanged = false;
+//   int activeButton = -1;
+
+//   // Check each button
+//   for (int i = 0; i < numButtons; i++) {
+//     // Read the button state
+//     int reading = digitalRead(buttonPins[i]);
+
+//     // Check if the button state has changed
+//     if (reading != lastButtonStates[i]) {
+//       // Reset the debounce timer
+//       lastDebounceTime[i] = millis();
+//     }
+
+//     // If enough time has passed, consider the state change valid
+//     if ((millis() - lastDebounceTime[i]) > debounceDelay) {
+//       // If the button state has changed
+//       if (reading != buttonStates[i]) {
+//         buttonStates[i] = reading;
+//         buttonStateChanged = true;
+
+//         // If the button is pressed (HIGH with external pull-down)
+//         if (buttonStates[i] == HIGH) {
+//           debugPrint("Button ");
+//           debugPrint(i + 1);
+//           debugPrint(" on GPIO ");
+//           debugPrint(buttonPins[i]);
+//           debugPrintln(" pressed");
+
+//           activeButton = i;
+//           anyButtonPressed = true;
+//           buttonPressed = true;
+//           readyToSleep = false;
+
+//           // Light up the LED with the color for this button
+//           strip.setPixelColor(0, buttonColors[i]);
+//           strip.show();
+//         }
+//       }
+//     }
+
+//     // Keep track if any button is currently pressed
+//     if (buttonStates[i] == HIGH) {
+//       anyButtonPressed = true;
+//     }
+
+//     // Save the current reading for the next loop
+//     lastButtonStates[i] = reading;
+//   }
+
+//   // If button state changed, send MQTT message
+//   if (buttonStateChanged) {
+//     sendButtonStates();
+//   }
+
+//   // If no button is currently pressed but one was pressed before, track release time
+//   if (!anyButtonPressed && buttonPressed) {
+//     buttonPressed = false;
+//     buttonReleaseTime = millis();
+//     readyToSleep = true;
+
+//     // Turn off the LED when button is released
+//     strip.setPixelColor(0, strip.Color(0, 0, 0));
+//     strip.show();
+
+//     // Send final button states before preparing for sleep
+//     sendButtonStates();
+
+//     debugPrintln("All buttons released, preparing for sleep");
+//   }
+
+//   // Keep MQTT connection alive
+//   if (!mqttClient.connected()) {
+//     connectToMQTT();
+//   }
+//   mqttClient.loop();
+
+//   // Send periodic MQTT updates if any button is pressed
+//   if (anyButtonPressed && (millis() - lastMqttUpdateTime > mqttUpdateInterval)) {
+//     sendButtonStates();
+//     lastMqttUpdateTime = millis();
+//   }
+
+//   // If it's time to sleep and we're ready
+//   if (readyToSleep && (millis() - buttonReleaseTime > sleepDelay)) {
+//     debugPrintln("Going to deep sleep now");
+// #if DEBUG_MODE
+//     Serial.flush();
+// #endif
+
+//     // Make sure LED is off before sleep
+//     strip.setPixelColor(0, strip.Color(0, 0, 0));
+//     strip.show();
+
+//     // Enter deep sleep
+//     esp_deep_sleep_start();
+//   }
+// }
