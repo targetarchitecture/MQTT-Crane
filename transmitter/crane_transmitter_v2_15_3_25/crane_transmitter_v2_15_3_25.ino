@@ -26,19 +26,20 @@ const char* buttonMovements[] = {
 
 // Define colors for each button (in RGB format)
 uint32_t buttonColors[] = {
-  0xFF0000,  // Red (Button 1 - DOWN)
-  0x00FF00,  // Green (Button 2 - ANTICLOCKWISE)
-  0x0000FF,  // Blue (Button 3 - OUT)
-  0xFFFF00,  // Yellow (Button 4 - CLOCKWISE)
-  0xFF00FF,  // Purple (Button 5 - IN)
-  0x00FFFF   // Cyan (Button 6 - UP)
+  0xFFAA00,  // Orange (Button 1 - ANTICLOCKWISE)
+  0xFF0000,  // Dark Green (Button 2 - DOWN)
+  0x0000FF,  // Bright Blue (Button 3 - OUT)
+  0x00AA00,  // Bright Red (Button 4 - CLOCKWISE)
+  0x8800FF,  // Purple (Button 5 - UP)
+  0x00AAAA   // Teal (Button 6 - IN)
 };
 
 // Variables to keep track of button states
 int buttonStates[6] = { LOW, LOW, LOW, LOW, LOW, LOW };
 int lastButtonStates[6] = { LOW, LOW, LOW, LOW, LOW, LOW };
-//unsigned long lastDebounceTime[6] = { 0, 0, 0, 0, 0, 0 };
-//const unsigned long debounceDelay = 50;  // Debounce time in milliseconds
+
+unsigned long lastDebounceTime[6] = { 0, 0, 0, 0, 0, 0 };
+const unsigned long debounceDelay = 50;  // Debounce time in milliseconds
 
 // MQTT periodic update variables
 unsigned long lastMqttUpdateTime = 0;
@@ -246,13 +247,13 @@ void loop() {
     int reading = digitalRead(buttonPins[i]);
 
     // Check if the button state has changed
-    // if (reading != lastButtonStates[i]) {
-    //   // Reset the debounce timer
-    //   lastDebounceTime[i] = millis();
-    // }
+    if (reading != lastButtonStates[i]) {
+      // Reset the debounce timer
+      lastDebounceTime[i] = millis();
+    }
 
     // If enough time has passed, consider the state change valid
-    //if ((millis() - lastDebounceTime[i]) > debounceDelay) {
+    if ((millis() - lastDebounceTime[i]) > debounceDelay) {
     // If the button state has changed
     if (reading != buttonStates[i]) {
       buttonStates[i] = reading;
@@ -276,7 +277,7 @@ void loop() {
         strip.show();
       }
     }
-    //}
+    }
 
     // Keep track if any button is currently pressed
     if (buttonStates[i] == HIGH) {
