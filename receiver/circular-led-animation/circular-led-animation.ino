@@ -28,11 +28,14 @@ const int STEPS_PER_CYCLE = 12;
 // Timing variables for non-blocking operation
 unsigned long previousCenterBlinkMillis = 0;
 unsigned long previousAnimationMillis = 0;
-unsigned long previousI2CScanMillis = 0;
+
+//unsigned long previousI2CScanMillis = 0;
+//const long i2cScanInterval = 5000;      // Scan I2C bus every 5 seconds
+
 const long centerBlinkInterval = 1000;  // 1000 milliseconds = 1 second
 const long animationInterval = 60;      // 60 milliseconds between animation steps
-const long i2cScanInterval = 5000;      // Scan I2C bus every 5 seconds
-bool centerLedState = false;            // Start with center LED off
+
+bool centerLedState = false;  // Start with center LED off
 
 void setup() {
   // Initialize Serial for debugging and I2C scan results
@@ -47,6 +50,9 @@ void setup() {
   pixels.setBrightness(100);  // Set brightness (0-255)
   pixels.clear();             // Set all pixels to 'off'
   pixels.show();              // Initialize all pixels to 'off'
+
+  // Scan the I2C bus
+  scanI2CBus();
 }
 
 void loop() {
@@ -74,19 +80,13 @@ void loop() {
     updateDisplay = true;
   }
 
-  // Check if it's time to scan I2C bus
-  if (currentMillis - previousI2CScanMillis >= i2cScanInterval) {
-    // Save the last time the I2C scan was performed
-    previousI2CScanMillis = currentMillis;
-
-    // Scan the I2C bus
-    scanI2CBus();
-  }
-
   // Only update the display if something changed
   if (updateDisplay) {
     updateLEDs();
   }
+
+  //delay
+  delay(50);
 }
 
 void updateLEDs() {
@@ -120,7 +120,7 @@ void updateLEDs() {
 
     pixels.setPixelColor(mainLED, BRIGHT_RED);
     pixels.setPixelColor(nextLED, MID_RED);
- 
+
     int prevLED = (mainLED == 1) ? 6 : mainLED - 1;
     int prevPrevLED = (prevLED == 1) ? 6 : prevLED - 1;
 
@@ -130,9 +130,6 @@ void updateLEDs() {
 
   // Send the updated colors to the LEDs
   pixels.show();
-
-  //delay
-  delay(50);
 }
 
 void scanI2CBus() {
