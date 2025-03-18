@@ -92,7 +92,7 @@ void updateLEDs() {
   
   // Set center LED based on current state
   if (centerLedState) {
-    pixels.setPixelColor(CENTER_LED, 0x00FF00);  // Green when on
+    pixels.setPixelColor(CENTER_LED, MID_RED);  // Green when on
   }
   
   // Calculate LED positions for the swoosh
