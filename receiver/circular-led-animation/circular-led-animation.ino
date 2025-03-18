@@ -1,31 +1,28 @@
 #include <Adafruit_NeoPixel.h>
-
 // Define which pin the LED is connected to
 // On the Lolin RGB Shield, this is typically D4 (GPIO2)
 #define LED_PIN D4
-
 // Define how many LEDs you have (1 in center, 6 in circle)
 #define LED_COUNT 7
-
 // Center LED is index 0, surrounding LEDs are 1-6
 #define CENTER_LED 0
-
 // Initialize the NeoPixel library
 Adafruit_NeoPixel pixels(LED_COUNT, LED_PIN, NEO_GRB + NEO_KHZ800);
-
 // Current active LED in the circle (1-6)
 int currentLED = 1;
-
 // Red color for the moving LED
 const uint32_t BRIGHT_RED = 0xFF0000;
 const uint32_t MID_RED = 0xA00000;
 const uint32_t DIM_RED = 0x500000;
 const uint32_t VERY_DIM_RED = 0x200000;
-
 // Number of positions in the animation sequence
 const int NUM_POSITIONS = 12;
 // How many steps to complete one full cycle around the circle
 const int STEPS_PER_CYCLE = 12;
+// Variables for center LED blinking
+unsigned long previousMillis = 0;
+const long blinkInterval = 1000;  // 1000 milliseconds = 1 second
+bool centerLedState = false;  // Start with center LED off
 
 void setup() {
   // Initialize the NeoPixel
@@ -36,8 +33,25 @@ void setup() {
 }
 
 void loop() {
+  // Current time
+  unsigned long currentMillis = millis();
+  
+  // Check if it's time to toggle the center LED
+  if (currentMillis - previousMillis >= blinkInterval) {
+    // Save the last time the center LED was toggled
+    previousMillis = currentMillis;
+    
+    // Toggle center LED state
+    centerLedState = !centerLedState;
+  }
+  
   // Clear all LEDs
   pixels.clear();
+  
+  // Set center LED based on current state
+  if (centerLedState) {
+    pixels.setPixelColor(CENTER_LED, MID_RED);  // Green when on
+  }
   
   // Calculate LED positions for the swoosh
   int mainLED = ((currentLED - 1) / 2) + 1;
