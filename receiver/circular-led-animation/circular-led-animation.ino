@@ -84,9 +84,6 @@ void loop() {
   if (updateDisplay) {
     updateLEDs();
   }
-
-  //delay
-  delay(50);
 }
 
 void updateLEDs() {
