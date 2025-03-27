@@ -10,12 +10,12 @@
 #include <string>
 
 std::map<std::string, int> buttons = {
-    {"ANTICLOCKWISE", 0},  // 0 could represent "off" or "inactive"
-    {"DOWN", 1},           // 1 could represent "on" or "active"
-    {"OUT", 0},
-    {"CLOCKWISE", 1},
-    {"UP", 0},
-    {"IN", 1}
+  { "ANTICLOCKWISE", 0 },  // 0 could represent "off" or "inactive"
+  { "DOWN", 1 },           // 1 could represent "on" or "active"
+  { "OUT", 0 },
+  { "CLOCKWISE", 1 },
+  { "UP", 0 },
+  { "IN", 1 }
 };
 
 // Debug mode - set to false to disable Serial output
@@ -99,11 +99,15 @@ void setupMotors() {
   while (motor1.PRODUCT_ID != PRODUCT_ID_I2C_MOTOR)  //wait motor shield ready.
   {
     motor1.getInfo();
+
+    delay(5);
   }
 
   while (motor2.PRODUCT_ID != PRODUCT_ID_I2C_MOTOR)  //wait motor shield ready.
   {
     motor2.getInfo();
+
+    delay(5);
   }
 }
 
@@ -117,32 +121,37 @@ void stopAllMotors() {
 }
 
 // Control a specific motor
-void controlMotor(int motorIndex, int direction) {
+void controlMotor() {
   if (isEmergencyStop) {
     stopAllMotors();
     return;
   }
 
-  // Update motor state
-  motorStates[motorIndex] = direction;
+  if (buttons["ANTICLOCKWISE"] == 1 && buttons["CLOCKWISE"] == 0) {
+    motor1.changeStatus(MOTOR_CH_A, MOTOR_STATUS_CCW);
+    motor1.changeDuty(MOTOR_CH_A, config.motor_speed);
+  }
+  if (buttons["ANTICLOCKWISE"] == 0 && buttons["CLOCKWISE"] == 1) {
+    motor1.changeStatus(MOTOR_CH_A, MOTOR_STATUS_CW);
+    motor.changeDuty(MOTOR_CH_A, config.motor_speed);
+  }
 
-  if (direction == 0) {
-    motor.stop(motorIndex + 1);
-    debugPrint("Motor ");
-    debugPrint(motorIndex + 1);
-    debugPrintln(" stopped");
-  } else {
-    if (direction > 0) {
-      motor.forward(motorIndex + 1, config.motor_speed);
-    } else {
-      motor.backward(motorIndex + 1, config.motor_speed);
-    }
-    debugPrint("Motor ");
-    debugPrint(motorIndex + 1);
-    debugPrint(" moving ");
-    debugPrint(direction > 0 ? "forward" : "reverse");
-    debugPrint(" at speed ");
-    debugPrintln(config.motor_speed);
+  if (buttons["UP"] == 1 && buttons["DOWN"] == 0) {
+    motor1.changeStatus(MOTOR_CH_B, MOTOR_STATUS_CCW);
+    motor.changeDuty(MOTOR_CH_B, config.motor_speed);
+  }
+  if (buttons["UP"] == 0 && buttons["DOWN"] == 1) {
+    motor1.changeStatus(MOTOR_CH_B, MOTOR_STATUS_CW);
+    motor1.changeDuty(MOTOR_CH_B, config.motor_speed);
+  }
+
+  if (buttons["IN"] == 1 && buttons["OUT"] == 0) {
+    motor2.changeStatus(MOTOR_CH_A, MOTOR_STATUS_CCW);
+    motor2.changeDuty(MOTOR_CH_A, config.motor_speed);
+  }
+  if (buttons["UP"] == 0 && buttons["DOWN"] == 1) {
+    motor2.changeStatus(MOTOR_CH_A, MOTOR_STATUS_CW);
+    motor2.changeDuty(MOTOR_CH_A, config.motor_speed);
   }
 }
 
@@ -198,26 +207,18 @@ void mqttCallback(char* topic, byte* payload, unsigned int length) {
     return;
   }
 
-  // Process movement commands
-  processMovements(doc);
-}
-
-// Process movement commands from JSON
-void processMovements(JsonDocument& doc) {
-  // Handle each movement type
-
   // ANTICLOCKWISE
-  if (doc.containsKey("ANTICLOCKWISE"){
+  if (doc.containsKey("ANTICLOCKWISE")) {
     buttons["ANTICLOCKWISE"] = doc["ANTICLOCKWISE"];
   }
-     if (doc.containsKey("CLOCKWISE"){
+  if (doc.containsKey("CLOCKWISE")) {
     buttons["CLOCKWISE"] = doc["CLOCKWISE"];
-  } 
+  }
   if (doc.containsKey("UP")) {
     buttons["UP"] = doc["UP"];
   }
   if (doc.containsKey("DOWN")) {
-    buttons["DOWN"] = doc["DOWN"]; 
+    buttons["DOWN"] = doc["DOWN"];
   }
   if (doc.containsKey("OUT")) {
     buttons["OUT"] = doc["OUT"];
@@ -226,9 +227,7 @@ void processMovements(JsonDocument& doc) {
     buttons["IN"] = doc["IN"];
   }
 
-
-    controlMotor(2, 0);  // Stop motor 3
-  
+  controlMotor();
 }
 
 void setup() {
@@ -243,12 +242,15 @@ void setup() {
   Wire.begin();
 
   // Setup motor shield
- setupMotors();
+  setupMotors();
 
   // Connect to WiFi and MQTT
   if (!connectToWiFi()) {
     return;
   }
+
+setupOTA() ;
+
   connectToMQTT();
 
   debugPrintln("Setup complete");
@@ -275,4 +277,54 @@ void loop() {
 
   // Small delay
   delay(10);
+}
+
+
+// Setup OTA Update
+void setupOTA() {
+  // Set hostname for OTA
+  ArduinoOTA.setHostname(config.hostname);
+
+  // Set OTA password
+  ArduinoOTA.setPassword(config.ota_password);
+
+  // OTA Event Handlers
+  ArduinoOTA.onStart([]() {
+    String type;
+    if (ArduinoOTA.getCommand() == U_FLASH)
+      type = "sketch";
+    else  // U_SPIFFS
+      type = "filesystem";
+
+    // Stop motors during update
+    stopAllMotors();
+
+    debugPrintln("Start updating " + type);
+  });
+
+  ArduinoOTA.onEnd([]() {
+    debugPrintln("\nOTA Update Complete");
+  });
+
+  ArduinoOTA.onProgress([](unsigned int progress, unsigned int total) {
+    debugPrint("Progress: ");
+    debugPrint(progress / (total / 100));
+    debugPrintln("%");
+  });
+
+  ArduinoOTA.onError([](ota_error_t error) {
+    debugPrint("Error[");
+    debugPrint(error);
+    debugPrintln("]: ");
+
+    if (error == OTA_AUTH_ERROR) debugPrintln("Auth Failed");
+    else if (error == OTA_BEGIN_ERROR) debugPrintln("Begin Failed");
+    else if (error == OTA_CONNECT_ERROR) debugPrintln("Connect Failed");
+    else if (error == OTA_RECEIVE_ERROR) debugPrintln("Receive Failed");
+    else if (error == OTA_END_ERROR) debugPrintln("End Failed");
+  });
+
+  // Start OTA
+  ArduinoOTA.begin();
+  debugPrintln("OTA Update Service Started");
 }
