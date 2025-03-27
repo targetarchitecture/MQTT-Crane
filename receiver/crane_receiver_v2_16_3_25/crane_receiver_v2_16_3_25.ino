@@ -9,70 +9,73 @@
 #include <map>
 #include <string>
 
+// Map to store button states and their corresponding values
+// 0 = inactive/off, 1 = active/on
 std::map<std::string, int> buttons = {
-  { "ANTICLOCKWISE", 0 },  // 0 could represent "off" or "inactive"
-  { "DOWN", 1 },           // 1 could represent "on" or "active"
-  { "OUT", 0 },
-  { "CLOCKWISE", 1 },
-  { "UP", 0 },
-  { "IN", 1 }
+  { "ANTICLOCKWISE", 0 },  // Controls rotation counter-clockwise
+  { "DOWN", 0 },           // Controls downward movement
+  { "OUT", 0 },            // Controls extension outward
+  { "CLOCKWISE", 0 },      // Controls rotation clockwise
+  { "UP", 0 },             // Controls upward movement
+  { "IN", 0 }              // Controls retraction inward
 };
 
-// Debug mode - set to false to disable Serial output
+// Debug mode flag - enables/disables Serial output for debugging
 #define DEBUG_MODE true
 
-// Configuration structure
+// Configuration structure to store all system settings
 struct Config {
-  // OTA Configuration
-  char hostname[32] = "crane-controller";
-  char ota_password[32] = "";
+  // OTA (Over-The-Air) Update Configuration
+  char hostname[32] = "crane-controller";  // Device hostname for network identification
+  char ota_password[32] = "";              // Password for OTA updates
 
-  // Motor Configuration
-  uint8_t motor_speed = 100;
+  // Motor Control Configuration
+  uint8_t motor_speed = 100;               // Default motor speed (0-100%)
 
-  // Network Configuration
-  char wifi_ssid[32] = "the robot network";
-  char wifi_password[32] = "isaacasimov";
+  // WiFi Network Configuration
+  char wifi_ssid[32] = "the robot network";    // WiFi network name
+  char wifi_password[32] = "isaacasimov";      // WiFi network password
 
-  // MQTT Configuration
-  char mqtt_server[32] = "robotmqtt";
-  int mqtt_port = 1883;
-  char mqtt_user[32] = "public";
-  char mqtt_password[32] = "public";
-  char mqtt_client_id[32] = "crane-controller";
-  char mqtt_topic[32] = "crane/buttons";
+  // MQTT Communication Configuration
+  char mqtt_server[32] = "robotmqtt";          // MQTT broker address
+  int mqtt_port = 1883;                        // MQTT broker port
+  char mqtt_user[32] = "public";               // MQTT username
+  char mqtt_password[32] = "public";           // MQTT password
+  char mqtt_client_id[32] = "crane-controller"; // Unique MQTT client identifier
+  char mqtt_topic[32] = "crane/buttons";       // MQTT topic for receiving commands
 
-  // System Configuration
-  int wifi_timeout = 20;
-  int mqtt_keepalive = 60;
+  // System Timing Configuration
+  int wifi_timeout = 20;                       // WiFi connection timeout (seconds)
+  int mqtt_keepalive = 60;                     // MQTT keepalive interval (seconds)
 } config;
 
-// LOLIN I2C Motor Shield Configuration
-LOLIN_I2C_MOTOR motor1(0x20);  // Motor board at address 0x20
-LOLIN_I2C_MOTOR motor2(0x21);  // Motor board at address 0x21
+// Initialize motor control objects with their I2C addresses
+LOLIN_I2C_MOTOR motor1(0x20);  // First motor board at I2C address 0x20
+LOLIN_I2C_MOTOR motor2(0x21);  // Second motor board at I2C address 0x21
 
-// Network objects
-WiFiClient espClient;
-PubSubClient mqttClient(espClient);
+// Network communication objects
+WiFiClient espClient;           // WiFi client for network communication
+PubSubClient mqttClient(espClient);  // MQTT client for message handling
 
-// System state
-bool isEmergencyStop = false;
+// System state tracking
+bool isEmergencyStop = false;   // Emergency stop flag for safety
 
-// --- Debugging Macros ---
+// Debug output macros - only active when DEBUG_MODE is true
 #if DEBUG_MODE
 #define debugPrintln(message) Serial.println(message)
 #define debugPrint(message) Serial.print(message)
 #else
-#define debugPrintln(message)  // do nothing
-#define debugPrint(message)    // do nothing
+#define debugPrintln(message)  // Debug messages disabled
+#define debugPrint(message)    // Debug messages disabled
 #endif
 
-// Function to connect to WiFi with retry
+// Attempts to connect to WiFi network with timeout
 bool connectToWiFi() {
   debugPrintln("Connecting to WiFi...");
-  WiFi.mode(WIFI_STA);
+  WiFi.mode(WIFI_STA);  // Set WiFi mode to Station (client)
   WiFi.begin(config.wifi_ssid, config.wifi_password);
 
+  // Wait for connection with timeout
   int timeout = 0;
   while (WiFi.status() != WL_CONNECTED && timeout < config.wifi_timeout) {
     delay(500);
@@ -80,6 +83,7 @@ bool connectToWiFi() {
     timeout++;
   }
 
+  // Report connection status
   if (WiFi.status() == WL_CONNECTED) {
     debugPrintln("");
     debugPrint("Connected to WiFi network with IP Address: ");
@@ -92,59 +96,59 @@ bool connectToWiFi() {
   }
 }
 
-// Configure motor shield
+// Initialize and verify motor shield connections
 void setupMotors() {
-
-  // Initialize I2C Motor Shield
-  while (motor1.PRODUCT_ID != PRODUCT_ID_I2C_MOTOR)  //wait motor shield ready.
-  {
+  // Wait for first motor board to be ready
+  while (motor1.PRODUCT_ID != PRODUCT_ID_I2C_MOTOR) {
     motor1.getInfo();
-
     delay(5);
   }
 
-  while (motor2.PRODUCT_ID != PRODUCT_ID_I2C_MOTOR)  //wait motor shield ready.
-  {
+  // Wait for second motor board to be ready
+  while (motor2.PRODUCT_ID != PRODUCT_ID_I2C_MOTOR) {
     motor2.getInfo();
-
     delay(5);
   }
 }
 
-// Stop all motors
+// Emergency stop function - stops all motors immediately
 void stopAllMotors() {
-  // Stop all motors
+  // Stop all motors on both boards
   motor1.changeStatus(MOTOR_CH_BOTH, MOTOR_STATUS_STOP);
   motor2.changeStatus(MOTOR_CH_BOTH, MOTOR_STATUS_STOP);
 
   debugPrintln("All motors stopped");
 }
 
-// Control a specific motor
+// Controls motor movement based on button states
 void controlMotor() {
+  // Emergency stop check - stops all motors if activated
   if (isEmergencyStop) {
     stopAllMotors();
     return;
   }
 
+  // Rotation control (Motor A on first board)
   if (buttons["ANTICLOCKWISE"] == 1 && buttons["CLOCKWISE"] == 0) {
     motor1.changeStatus(MOTOR_CH_A, MOTOR_STATUS_CCW);
     motor1.changeDuty(MOTOR_CH_A, config.motor_speed);
   }
   if (buttons["ANTICLOCKWISE"] == 0 && buttons["CLOCKWISE"] == 1) {
     motor1.changeStatus(MOTOR_CH_A, MOTOR_STATUS_CW);
-    motor.changeDuty(MOTOR_CH_A, config.motor_speed);
+    motor1.changeDuty(MOTOR_CH_A, config.motor_speed);
   }
 
+  // Vertical movement control (Motor B on first board)
   if (buttons["UP"] == 1 && buttons["DOWN"] == 0) {
     motor1.changeStatus(MOTOR_CH_B, MOTOR_STATUS_CCW);
-    motor.changeDuty(MOTOR_CH_B, config.motor_speed);
+    motor1.changeDuty(MOTOR_CH_B, config.motor_speed);
   }
   if (buttons["UP"] == 0 && buttons["DOWN"] == 1) {
     motor1.changeStatus(MOTOR_CH_B, MOTOR_STATUS_CW);
     motor1.changeDuty(MOTOR_CH_B, config.motor_speed);
   }
 
+  // Extension control (Motor A on second board)
   if (buttons["IN"] == 1 && buttons["OUT"] == 0) {
     motor2.changeStatus(MOTOR_CH_A, MOTOR_STATUS_CCW);
     motor2.changeDuty(MOTOR_CH_A, config.motor_speed);
@@ -155,7 +159,7 @@ void controlMotor() {
   }
 }
 
-// Function to connect to MQTT broker
+// Establishes connection to MQTT broker
 void connectToMQTT() {
   if (WiFi.status() != WL_CONNECTED) {
     return;
@@ -168,7 +172,7 @@ void connectToMQTT() {
   if (mqttClient.connect(config.mqtt_client_id, config.mqtt_user, config.mqtt_password)) {
     debugPrintln("Connected to MQTT broker");
 
-    // Subscribe to topic
+    // Subscribe to command topic
     mqttClient.subscribe(config.mqtt_topic);
     debugPrint("Subscribed to: ");
     debugPrintln(config.mqtt_topic);
@@ -178,26 +182,27 @@ void connectToMQTT() {
   }
 }
 
-// MQTT message callback
+// Handles incoming MQTT messages
 void mqttCallback(char* topic, byte* payload, unsigned int length) {
   debugPrint("Message arrived on topic: ");
   debugPrint(topic);
   debugPrint(". Message: ");
 
+  // Convert payload to string
   String message;
   for (int i = 0; i < length; i++) {
     message += (char)payload[i];
   }
   debugPrintln(message);
 
-  // Handle emergency stop
+  // Check for emergency stop command
   if (message.indexOf("EMERGENCY_STOP") >= 0) {
     isEmergencyStop = true;
     debugPrintln("Emergency stop activated");
     return;
   }
 
-  // Parse JSON for movement commands
+  // Parse JSON message for movement commands
   StaticJsonDocument<200> doc;
   DeserializationError error = deserializeJson(doc, message);
 
@@ -207,7 +212,7 @@ void mqttCallback(char* topic, byte* payload, unsigned int length) {
     return;
   }
 
-  // ANTICLOCKWISE
+  // Update button states from JSON message
   if (doc.containsKey("ANTICLOCKWISE")) {
     buttons["ANTICLOCKWISE"] = doc["ANTICLOCKWISE"];
   }
@@ -227,68 +232,72 @@ void mqttCallback(char* topic, byte* payload, unsigned int length) {
     buttons["IN"] = doc["IN"];
   }
 
+  // Execute motor control based on updated button states
   controlMotor();
 }
 
+// System initialization
 void setup() {
 #if DEBUG_MODE
-  Serial.begin(115200);
-  delay(100);
+  Serial.begin(115200);  // Initialize serial communication for debugging
+  delay(100);           // Wait for serial to stabilize
 #endif
 
   debugPrintln("ESP8266 Crane Motor Controller");
 
-  // Initialize I2C communication
+  // Initialize I2C communication for motor control
   Wire.begin();
 
-  // Setup motor shield
+  // Initialize motor shields
   setupMotors();
 
-  // Connect to WiFi and MQTT
+  // Connect to network and MQTT
   if (!connectToWiFi()) {
     return;
   }
 
-setupOTA() ;
+  // Setup OTA update capability
+  setupOTA();
 
+  // Connect to MQTT broker
   connectToMQTT();
 
   debugPrintln("Setup complete");
 }
 
+// Main program loop
 void loop() {
-  // Handle OTA Updates
+  // Handle any pending OTA updates
   ArduinoOTA.handle();
 
-  // Reconnect to WiFi if disconnected
+  // Maintain WiFi connection
   if (WiFi.status() != WL_CONNECTED) {
     if (connectToWiFi()) {
       connectToMQTT();
     }
   }
 
-  // Reconnect to MQTT if disconnected
+  // Maintain MQTT connection
   if (!mqttClient.connected()) {
     connectToMQTT();
   }
 
-  // Process MQTT messages
+  // Process any pending MQTT messages
   mqttClient.loop();
 
-  // Small delay
+  // Small delay to prevent overwhelming the system
   delay(10);
 }
 
-
-// Setup OTA Update
+// Configure Over-The-Air update functionality
 void setupOTA() {
-  // Set hostname for OTA
+  // Set device hostname for network identification
   ArduinoOTA.setHostname(config.hostname);
 
-  // Set OTA password
+  // Set OTA update password
   ArduinoOTA.setPassword(config.ota_password);
 
-  // OTA Event Handlers
+  // Configure OTA event handlers
   ArduinoOTA.onStart([]() {
     String type;
     if (ArduinoOTA.getCommand() == U_FLASH)
@@ -296,22 +305,25 @@ void setupOTA() {
     else  // U_SPIFFS
       type = "filesystem";
 
-    // Stop motors during update
+    // Ensure motors are stopped during update
     stopAllMotors();
 
     debugPrintln("Start updating " + type);
   });
 
+  // Handle OTA completion
   ArduinoOTA.onEnd([]() {
     debugPrintln("\nOTA Update Complete");
   });
 
+  // Display update progress
   ArduinoOTA.onProgress([](unsigned int progress, unsigned int total) {
     debugPrint("Progress: ");
     debugPrint(progress / (total / 100));
     debugPrintln("%");
   });
 
+  // Handle OTA errors
   ArduinoOTA.onError([](ota_error_t error) {
     debugPrint("Error[");
     debugPrint(error);
@@ -324,7 +336,7 @@ void setupOTA() {
     else if (error == OTA_END_ERROR) debugPrintln("End Failed");
   });
 
-  // Start OTA
+  // Start OTA service
   ArduinoOTA.begin();
   debugPrintln("OTA Update Service Started");
 }
