@@ -1,30 +1,25 @@
-#include <WiFi.h>
+#include <ESP8266WiFi.h>
 #include <PubSubClient.h>
 #include <ArduinoJson.h>
+#include <ESP8266mDNS.h>
+#include <WiFiUdp.h>
+#include <ArduinoOTA.h>
+#include <Wire.h>
+#include <LOLIN_I2C_MOTOR.h>
 
 // Debug mode - set to false to disable Serial output
 #define DEBUG_MODE true
 
-// L9110S Motor Driver pins (A-1A, A-1B for each motor)
-// Motor 1 - ANTICLOCKWISE/CLOCKWISE movement (rotation)
-#define MOTOR1_A 4
-#define MOTOR1_B 5
+// OTA Configuration
+#define HOSTNAME "esp8266-crane-controller"
+#define OTA_PASSWORD ""  // Change this to a secure password
 
-// Motor 2 - DOWN/UP movement (lifting)
-#define MOTOR2_A 6
-#define MOTOR2_B 7
+// LOLIN I2C Motor Shield Configuration
+LOLIN_I2C_MOTOR motor1(0x20);  // First motor board at address 0x20
+LOLIN_I2C_MOTOR motor2(0x21);  // Second motor board at address 0x21
 
-// Motor 3 - OUT/IN movement (extension)
-#define MOTOR3_A 8
-#define MOTOR3_B 9
-
-// PWM properties
-const int freq = 5000;
-const int resolution = 8;  // 8-bit resolution (0-255)
-const int motorChannels[] = {0, 1, 2, 3, 4, 5};
-
-// Motor speed settings (0-255)
-const int motorSpeed = 200;  // Default motor speed
+// Motor speed settings
+const uint8_t motorSpeed = 100;  // 0-100 range for LOLIN I2C Motor Shield
 
 // Define movement types corresponding to the transmitter
 const char* MOVEMENTS[] = {
@@ -38,7 +33,7 @@ const char* MOVEMENTS[] = {
 const int NUM_MOVEMENTS = 6;
 
 // Motor state tracking
-int motorStates[3] = {0, 0, 0};  // 0: Stopped, 1: Forward, -1: Reverse
+int motorStates[6] = {0, 0, 0, 0, 0, 0};  // 0: Stopped, 1: Forward, -1: Reverse
 
 // Wi-Fi credentials
 const char* WIFI_SSID = "the robot network";
@@ -49,7 +44,7 @@ const char* MQTT_SERVER = "robotmqtt";
 const int MQTT_PORT = 1883;
 const char* MQTT_USER = "public";
 const char* MQTT_PASSWORD = "public";
-const char* MQTT_CLIENT_ID = "Crane_Controller";
+const char* MQTT_CLIENT_ID = "Crane-Controller";
 const char* MQTT_TOPIC = "crane/buttons";
 
 // Network objects
@@ -65,9 +60,59 @@ PubSubClient mqttClient(espClient);
 #define debugPrint(message)    // do nothing
 #endif
 
+// Setup OTA Update
+void setupOTA() {
+  // Set hostname for OTA
+  ArduinoOTA.setHostname(HOSTNAME);
+  
+  // Set OTA password
+  ArduinoOTA.setPassword(OTA_PASSWORD);
+  
+  // OTA Event Handlers
+  ArduinoOTA.onStart([]() {
+    String type;
+    if (ArduinoOTA.getCommand() == U_FLASH)
+      type = "sketch";
+    else  // U_SPIFFS
+      type = "filesystem";
+
+    // Stop motors during update
+    stopAllMotors();
+    
+    debugPrintln("Start updating " + type);
+  });
+  
+  ArduinoOTA.onEnd([]() {
+    debugPrintln("\nOTA Update Complete");
+  });
+  
+  ArduinoOTA.onProgress([](unsigned int progress, unsigned int total) {
+    debugPrint("Progress: ");
+    debugPrint(progress / (total / 100));
+    debugPrintln("%");
+  });
+  
+  ArduinoOTA.onError([](ota_error_t error) {
+    debugPrint("Error[");
+    debugPrint(error);
+    debugPrintln("]: ");
+    
+    if (error == OTA_AUTH_ERROR) debugPrintln("Auth Failed");
+    else if (error == OTA_BEGIN_ERROR) debugPrintln("Begin Failed");
+    else if (error == OTA_CONNECT_ERROR) debugPrintln("Connect Failed");
+    else if (error == OTA_RECEIVE_ERROR) debugPrintln("Receive Failed");
+    else if (error == OTA_END_ERROR) debugPrintln("End Failed");
+  });
+  
+  // Start OTA
+  ArduinoOTA.begin();
+  debugPrintln("OTA Update Service Started");
+}
+
 // Function to connect to WiFi
 void connectToWiFi() {
   debugPrintln("Connecting to WiFi...");
+  WiFi.mode(WIFI_STA);  // Explicitly set station mode for ESP8266
   WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
 
   // Wait for connection (with timeout)
@@ -82,9 +127,107 @@ void connectToWiFi() {
     debugPrintln("");
     debugPrint("Connected to WiFi network with IP Address: ");
     debugPrintln(WiFi.localIP());
+    
+    // Setup OTA after successful WiFi connection
+    setupOTA();
   } else {
     debugPrintln("");
     debugPrintln("Failed to connect to WiFi");
+  }
+}
+
+// Configure motor shield
+void setupMotors() {
+  // Initialize First I2C Motor Shield
+  if (motor1.MOTOR_STATUS() == false) {
+    debugPrintln("First I2C Motor Shield not found at address 0x20. Check wiring.");
+    while (1);
+  }
+  debugPrintln("First I2C Motor Shield found at address 0x20");
+
+  // Initialize Second I2C Motor Shield
+  if (motor2.MOTOR_STATUS() == false) {
+    debugPrintln("Second I2C Motor Shield not found at address 0x21. Check wiring.");
+    while (1);
+  }
+  debugPrintln("Second I2C Motor Shield found at address 0x21");
+
+  // Initialize all motors to stop
+  stopAllMotors();
+}
+
+// Stop all motors
+void stopAllMotors() {
+  // Stop motors on first board
+  motor1.MOTOR_STOP(1);
+  motor1.MOTOR_STOP(2);
+  motor1.MOTOR_STOP(3);
+  
+  // Stop motors on second board
+  motor2.MOTOR_STOP(1);
+  motor2.MOTOR_STOP(2);
+  motor2.MOTOR_STOP(3);
+  
+  // Reset motor states
+  for (int i = 0; i < 6; i++) {
+    motorStates[i] = 0;
+  }
+  
+  debugPrintln("All motors stopped");
+}
+
+// Control a specific motor
+void controlMotor(int motorIndex, int direction) {
+  int boardNum;
+  int motorNum;
+  
+  // Select the appropriate board and motor number
+  if (motorIndex < 3) {
+    boardNum = 1;  // First board
+    motorNum = motorIndex + 1;
+  } else {
+    boardNum = 2;  // Second board
+    motorNum = motorIndex - 2;
+  }
+  
+  // Update motor state
+  motorStates[motorIndex] = direction;
+  
+  if (direction == 1) {  // Forward
+    if (boardNum == 1) {
+      motor1.MOTOR_CCW(motorNum, motorSpeed);
+    } else {
+      motor2.MOTOR_CCW(motorNum, motorSpeed);
+    }
+    debugPrint("Motor ");
+    debugPrint(motorIndex + 1);
+    debugPrint(" on board ");
+    debugPrint(boardNum);
+    debugPrintln(" moving forward (CCW)");
+  } 
+  else if (direction == -1) {  // Reverse
+    if (boardNum == 1) {
+      motor1.MOTOR_CW(motorNum, motorSpeed);
+    } else {
+      motor2.MOTOR_CW(motorNum, motorSpeed);
+    }
+    debugPrint("Motor ");
+    debugPrint(motorIndex + 1);
+    debugPrint(" on board ");
+    debugPrint(boardNum);
+    debugPrintln(" moving reverse (CW)");
+  } 
+  else {  // Stop
+    if (boardNum == 1) {
+      motor1.MOTOR_STOP(motorNum);
+    } else {
+      motor2.MOTOR_STOP(motorNum);
+    }
+    debugPrint("Motor ");
+    debugPrint(motorIndex + 1);
+    debugPrint(" on board ");
+    debugPrint(boardNum);
+    debugPrintln(" stopped");
   }
 }
 
@@ -110,76 +253,6 @@ void connectToMQTT() {
   } else {
     debugPrint("Failed to connect to MQTT broker, rc=");
     debugPrintln(mqttClient.state());
-  }
-}
-
-// Configure motor pins for PWM control
-void setupMotors() {
-  // Setup Motor 1 PWM channels (rotation)
-  ledcSetup(motorChannels[0], freq, resolution);
-  ledcSetup(motorChannels[1], freq, resolution);
-  ledcAttachPin(MOTOR1_A, motorChannels[0]);
-  ledcAttachPin(MOTOR1_B, motorChannels[1]);
-
-  // Setup Motor 2 PWM channels (lifting)
-  ledcSetup(motorChannels[2], freq, resolution);
-  ledcSetup(motorChannels[3], freq, resolution);
-  ledcAttachPin(MOTOR2_A, motorChannels[2]);
-  ledcAttachPin(MOTOR2_B, motorChannels[3]);
-
-  // Setup Motor 3 PWM channels (extension)
-  ledcSetup(motorChannels[4], freq, resolution);
-  ledcSetup(motorChannels[5], freq, resolution);
-  ledcAttachPin(MOTOR3_A, motorChannels[4]);
-  ledcAttachPin(MOTOR3_B, motorChannels[5]);
-
-  // Initialize all motors to stop
-  stopAllMotors();
-}
-
-// Stop all motors
-void stopAllMotors() {
-  for (int i = 0; i < 6; i++) {
-    ledcWrite(motorChannels[i], 0);
-  }
-  
-  // Reset motor states
-  for (int i = 0; i < 3; i++) {
-    motorStates[i] = 0;
-  }
-  
-  debugPrintln("All motors stopped");
-}
-
-// Control a specific motor
-void controlMotor(int motorIndex, int direction) {
-  // Motor pairs (A and B pins)
-  int channelA = motorIndex * 2;
-  int channelB = motorIndex * 2 + 1;
-  
-  // Update motor state
-  motorStates[motorIndex] = direction;
-  
-  if (direction == 1) {  // Forward
-    ledcWrite(channelA, motorSpeed);
-    ledcWrite(channelB, 0);
-    debugPrint("Motor ");
-    debugPrint(motorIndex + 1);
-    debugPrintln(" moving forward");
-  } 
-  else if (direction == -1) {  // Reverse
-    ledcWrite(channelA, 0);
-    ledcWrite(channelB, motorSpeed);
-    debugPrint("Motor ");
-    debugPrint(motorIndex + 1);
-    debugPrintln(" moving reverse");
-  } 
-  else {  // Stop
-    ledcWrite(channelA, 0);
-    ledcWrite(channelB, 0);
-    debugPrint("Motor ");
-    debugPrint(motorIndex + 1);
-    debugPrintln(" stopped");
   }
 }
 
@@ -250,9 +323,12 @@ void setup() {
   delay(100);  // Short delay to ensure serial is ready
   #endif
 
-  debugPrintln("ESP32 Crane Motor Controller");
+  debugPrintln("ESP8266 Crane Motor Controller");
   
-  // Setup motor control pins
+  // Initialize I2C communication
+  Wire.begin();
+  
+  // Setup motor shield
   setupMotors();
 
   // Connect to WiFi and MQTT
@@ -263,6 +339,10 @@ void setup() {
 }
 
 void loop() {
+  // Handle OTA Updates
+  ArduinoOTA.handle();
+  
+  
   // Reconnect to WiFi if disconnected
   if (WiFi.status() != WL_CONNECTED) {
     connectToWiFi();
