@@ -247,7 +247,7 @@ void setup() {
   // Initialize serial communication for debugging
   #if DEBUG_MODE
   Serial.begin(115200);
-  delay(1000);  // Short delay to ensure serial is ready
+  delay(100);  // Short delay to ensure serial is ready
   #endif
 
   debugPrintln("ESP32 Crane Motor Controller");

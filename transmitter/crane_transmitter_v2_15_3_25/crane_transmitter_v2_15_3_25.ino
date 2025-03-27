@@ -168,6 +168,7 @@ void printWakeupReason() {
           if (wakeup_pin_mask & (1ULL << buttonPins[i])) {
             debugPrint("Wakeup button: GPIO ");
             debugPrintln(buttonPins[i]);
+            delay(10); 
 
             // Set the LED to the color of the button that woke up the device
             strip.setPixelColor(0, buttonColors[i]);
@@ -197,6 +198,7 @@ void setup() {
 #endif
 
   debugPrintln("ESP32-S3 WS2812 LED Control with Deep Sleep and MQTT");
+delay(10); 
 
   // Initialize the LED strip
   strip.begin();
@@ -213,6 +215,7 @@ void setup() {
     debugPrint("Button on GPIO ");
     debugPrint(buttonPins[i]);
     debugPrintln(" initialized");
+    delay(10); 
   }
 
   // Check if the ESP32 woke up from deep sleep
