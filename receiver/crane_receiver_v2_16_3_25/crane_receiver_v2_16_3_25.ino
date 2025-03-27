@@ -153,7 +153,7 @@ void controlMotor() {
     motor2.changeStatus(MOTOR_CH_A, MOTOR_STATUS_CCW);
     motor2.changeDuty(MOTOR_CH_A, config.motor_speed);
   }
-  if (buttons["UP"] == 0 && buttons["DOWN"] == 1) {
+  if (buttons["UP"] == 0 && buttons["OUT"] == 1) {
     motor2.changeStatus(MOTOR_CH_A, MOTOR_STATUS_CW);
     motor2.changeDuty(MOTOR_CH_A, config.motor_speed);
   }
