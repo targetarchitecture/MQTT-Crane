@@ -21,13 +21,13 @@ std::map<std::string, int> buttons = {
 };
 
 // Debug mode flag - enables/disables Serial output for debugging
-#define DEBUG_MODE true
+#define DEBUG_MODE false
 
 // Configuration structure to store all system settings
 struct Config {
   // OTA (Over-The-Air) Update Configuration
   char hostname[32] = "crane-controller";  // Device hostname for network identification
-  char ota_password[32] = "";              // Password for OTA updates
+  char ota_password[32] = "xxx";              // Password for OTA updates
 
   // Motor Control Configuration
   uint8_t motor_speed = 100;  // Default motor speed (0-100%)
