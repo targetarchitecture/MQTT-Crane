@@ -58,7 +58,6 @@ WiFiClient espClient;                // WiFi client for network communication
 PubSubClient mqttClient(espClient);  // MQTT client for message handling
 
 // System state tracking
-bool isEmergencyStop = false;  // Emergency stop flag for safety
 unsigned long lastMessageTime = 0;  // Timestamp of last received MQTT message
 const unsigned long MESSAGE_TIMEOUT = 1000;  // Timeout period in milliseconds (1 second)
 
@@ -124,12 +123,6 @@ void stopAllMotors() {
 
 // Controls motor movement based on button states
 void controlMotor() {
-  // Emergency stop check - stops all motors if activated
-  if (isEmergencyStop) {
-    stopAllMotors();
-    return;
-  }
-
   // Rotation control (Motor A on first board)
   //FIX THE TRANSMITTER
   if (buttons["ANTICLOCKWISE"] == 1 && buttons["CLOCKWISE"] == 1) {
@@ -210,13 +203,6 @@ void mqttCallback(char* topic, byte* payload, unsigned int length) {
     message += (char)payload[i];
   }
   debugPrintln(message);
-
-  // Check for emergency stop command
-  if (message.indexOf("EMERGENCY_STOP") >= 0) {
-    isEmergencyStop = true;
-    debugPrintln("Emergency stop activated");
-    return;
-  }
 
   // Parse JSON message for movement commands
   StaticJsonDocument<200> doc;
@@ -301,9 +287,6 @@ void loop() {
     
     // Stop all motors
     stopAllMotors();
-    
-    // Reset emergency stop flag
-    isEmergencyStop = false;
   }
 
   // Maintain WiFi connection
@@ -341,7 +324,7 @@ void setupOTA() {
     else  // U_SPIFFS
       type = "filesystem";
 
-    // Ensure motors are stopped during update
+    // Stop motors during update
     stopAllMotors();
 
     debugPrintln("Start updating " + type);
