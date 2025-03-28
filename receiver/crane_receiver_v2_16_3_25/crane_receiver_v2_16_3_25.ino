@@ -30,23 +30,23 @@ struct Config {
   char ota_password[32] = "";              // Password for OTA updates
 
   // Motor Control Configuration
-  uint8_t motor_speed = 100;               // Default motor speed (0-100%)
+  uint8_t motor_speed = 100;  // Default motor speed (0-100%)
 
   // WiFi Network Configuration
-  char wifi_ssid[32] = "the robot network";    // WiFi network name
-  char wifi_password[32] = "isaacasimov";      // WiFi network password
+  char wifi_ssid[32] = "the robot network";  // WiFi network name
+  char wifi_password[32] = "isaacasimov";    // WiFi network password
 
   // MQTT Communication Configuration
-  char mqtt_server[32] = "robotmqtt";          // MQTT broker address
-  int mqtt_port = 1883;                        // MQTT broker port
-  char mqtt_user[32] = "public";               // MQTT username
-  char mqtt_password[32] = "public";           // MQTT password
-  char mqtt_client_id[32] = "crane-controller"; // Unique MQTT client identifier
-  char mqtt_topic[32] = "crane/buttons";       // MQTT topic for receiving commands
+  char mqtt_server[32] = "robotmqtt";            // MQTT broker address
+  int mqtt_port = 1883;                          // MQTT broker port
+  char mqtt_user[32] = "public";                 // MQTT username
+  char mqtt_password[32] = "public";             // MQTT password
+  char mqtt_client_id[32] = "crane-controller";  // Unique MQTT client identifier
+  char mqtt_topic[32] = "crane/buttons";         // MQTT topic for receiving commands
 
   // System Timing Configuration
-  int wifi_timeout = 20;                       // WiFi connection timeout (seconds)
-  int mqtt_keepalive = 60;                     // MQTT keepalive interval (seconds)
+  int wifi_timeout = 20;    // WiFi connection timeout (seconds)
+  int mqtt_keepalive = 60;  // MQTT keepalive interval (seconds)
 } config;
 
 // Initialize motor control objects with their I2C addresses
@@ -54,11 +54,13 @@ LOLIN_I2C_MOTOR motor1(0x20);  // First motor board at I2C address 0x20
 LOLIN_I2C_MOTOR motor2(0x21);  // Second motor board at I2C address 0x21
 
 // Network communication objects
-WiFiClient espClient;           // WiFi client for network communication
+WiFiClient espClient;                // WiFi client for network communication
 PubSubClient mqttClient(espClient);  // MQTT client for message handling
 
 // System state tracking
-bool isEmergencyStop = false;   // Emergency stop flag for safety
+bool isEmergencyStop = false;  // Emergency stop flag for safety
+unsigned long lastMessageTime = 0;  // Timestamp of last received MQTT message
+const unsigned long MESSAGE_TIMEOUT = 1000;  // Timeout period in milliseconds (1 second)
 
 // Debug output macros - only active when DEBUG_MODE is true
 #if DEBUG_MODE
@@ -129,13 +131,17 @@ void controlMotor() {
   }
 
   // Rotation control (Motor A on first board)
-  if (buttons["ANTICLOCKWISE"] == 1 && buttons["CLOCKWISE"] == 0) {
+  //FIX THE TRANSMITTER
+  if (buttons["ANTICLOCKWISE"] == 1 && buttons["CLOCKWISE"] == 1) {
     motor1.changeStatus(MOTOR_CH_A, MOTOR_STATUS_CCW);
     motor1.changeDuty(MOTOR_CH_A, config.motor_speed);
   }
   if (buttons["ANTICLOCKWISE"] == 0 && buttons["CLOCKWISE"] == 1) {
     motor1.changeStatus(MOTOR_CH_A, MOTOR_STATUS_CW);
     motor1.changeDuty(MOTOR_CH_A, config.motor_speed);
+  }
+  if (buttons["ANTICLOCKWISE"] == 0 && buttons["CLOCKWISE"] == 0) {
+    motor1.changeStatus(MOTOR_CH_A, MOTOR_STATUS_STOP);
   }
 
   // Vertical movement control (Motor B on first board)
@@ -147,6 +153,10 @@ void controlMotor() {
     motor1.changeStatus(MOTOR_CH_B, MOTOR_STATUS_CW);
     motor1.changeDuty(MOTOR_CH_B, config.motor_speed);
   }
+  if (buttons["UP"] == 0 && buttons["DOWN"] == 0) {
+    motor1.changeStatus(MOTOR_CH_B, MOTOR_STATUS_STOP);
+  }
+
 
   // Extension control (Motor A on second board)
   if (buttons["IN"] == 1 && buttons["OUT"] == 0) {
@@ -156,6 +166,9 @@ void controlMotor() {
   if (buttons["UP"] == 0 && buttons["OUT"] == 1) {
     motor2.changeStatus(MOTOR_CH_A, MOTOR_STATUS_CW);
     motor2.changeDuty(MOTOR_CH_A, config.motor_speed);
+  }
+  if (buttons["UP"] == 0 && buttons["OUT"] == 0) {
+    motor2.changeStatus(MOTOR_CH_A, MOTOR_STATUS_STOP);
   }
 }
 
@@ -184,6 +197,9 @@ void connectToMQTT() {
 
 // Handles incoming MQTT messages
 void mqttCallback(char* topic, byte* payload, unsigned int length) {
+  // Update last message time
+  lastMessageTime = millis();
+  
   debugPrint("Message arrived on topic: ");
   debugPrint(topic);
   debugPrint(". Message: ");
@@ -240,7 +256,7 @@ void mqttCallback(char* topic, byte* payload, unsigned int length) {
 void setup() {
 #if DEBUG_MODE
   Serial.begin(115200);  // Initialize serial communication for debugging
-  delay(100);           // Wait for serial to stabilize
+  delay(100);            // Wait for serial to stabilize
 #endif
 
   debugPrintln("ESP8266 Crane Motor Controller");
@@ -250,6 +266,9 @@ void setup() {
 
   // Initialize motor shields
   setupMotors();
+
+  // Initialize last message time
+  lastMessageTime = millis();
 
   // Connect to network and MQTT
   if (!connectToWiFi()) {
@@ -269,6 +288,23 @@ void setup() {
 void loop() {
   // Handle any pending OTA updates
   ArduinoOTA.handle();
+
+  // Check for message timeout
+  if (millis() - lastMessageTime > MESSAGE_TIMEOUT) {
+    // Reset all button states
+    buttons["ANTICLOCKWISE"] = 0;
+    buttons["CLOCKWISE"] = 0;
+    buttons["UP"] = 0;
+    buttons["DOWN"] = 0;
+    buttons["OUT"] = 0;
+    buttons["IN"] = 0;
+    
+    // Stop all motors
+    stopAllMotors();
+    
+    // Reset emergency stop flag
+    isEmergencyStop = false;
+  }
 
   // Maintain WiFi connection
   if (WiFi.status() != WL_CONNECTED) {
