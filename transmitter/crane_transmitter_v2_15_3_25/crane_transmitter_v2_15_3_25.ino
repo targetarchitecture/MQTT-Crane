@@ -5,9 +5,10 @@
 #include <ArduinoJson.h>
 
 // Debug mode - set to false to disable Serial output
-#define DEBUG_MODE true
+//#define DEBUG_MODE true
 
 // Define the WS2812 LED pin
+//#define LED_MODE true
 #define LED_PIN 21
 #define NUM_LEDS 1
 
@@ -26,12 +27,12 @@ const char* buttonMovements[] = {
 
 // Define colors for each button (in RGB format)
 uint32_t buttonColors[] = {
-  0xFFAA00,  // Orange (Button 1 - ANTICLOCKWISE)
-  0xFF0000,  // Dark Green (Button 2 - DOWN)
-  0x0000FF,  // Bright Blue (Button 3 - OUT)
-  0x00AA00,  // Bright Red (Button 4 - CLOCKWISE)
-  0x8800FF,  // Purple (Button 5 - UP)
-  0x00AAAA   // Teal (Button 6 - IN)
+    0xFF9800,   // Vivid Orange (Button 1 - ANTICLOCKWISE)  Y
+    0xD32F2F,   // Deep Red (Button 2 - DOWN)               Y
+    0x2196F3,   // Bright Blue (Button 3 - OUT)
+    0x4CAF50,   // Green (Button 4 - CLOCKWISE)             Y
+    0x9C27B0,   // Purple (Button 5 - UP)                   Y
+    0x00BCD4    // Cyan/Light Blue (Button 6 - IN)
 };
 
 // Variables to keep track of button states
@@ -168,11 +169,13 @@ void printWakeupReason() {
           if (wakeup_pin_mask & (1ULL << buttonPins[i])) {
             debugPrint("Wakeup button: GPIO ");
             debugPrintln(buttonPins[i]);
-            delay(10); 
+            delay(10);
 
+#if LED_MODE
             // Set the LED to the color of the button that woke up the device
             strip.setPixelColor(0, buttonColors[i]);
             strip.show();
+#endif
             break;
           }
         }
@@ -198,9 +201,10 @@ void setup() {
 #endif
 
   debugPrintln("ESP32-S3 WS2812 LED Control with Deep Sleep and MQTT");
-delay(10); 
+  delay(10);
 
   // Initialize the LED strip
+#if LED_MODE
   strip.begin();
   strip.setBrightness(50);  // Set brightness (0-255)
   strip.show();             // Initialize all pixels to 'off'
@@ -208,6 +212,7 @@ delay(10);
   // Set initial LED color to black/off
   strip.setPixelColor(0, strip.Color(0, 0, 0));  // Explicitly set to black (R=0, G=0, B=0)
   strip.show();
+#endif
 
   // Initialize button pins as inputs (externally pulled down)
   for (int i = 0; i < numButtons; i++) {
@@ -215,7 +220,7 @@ delay(10);
     debugPrint("Button on GPIO ");
     debugPrint(buttonPins[i]);
     debugPrintln(" initialized");
-    delay(10); 
+    delay(10);
   }
 
   // Check if the ESP32 woke up from deep sleep
@@ -257,29 +262,31 @@ void loop() {
 
     // If enough time has passed, consider the state change valid
     if ((millis() - lastDebounceTime[i]) > debounceDelay) {
-    // If the button state has changed
-    if (reading != buttonStates[i]) {
-      buttonStates[i] = reading;
-      buttonStateChanged = true;
+      // If the button state has changed
+      if (reading != buttonStates[i]) {
+        buttonStates[i] = reading;
+        buttonStateChanged = true;
 
-      // If the button is pressed (HIGH with external pull-down)
-      if (buttonStates[i] == HIGH) {
-        debugPrint("Button ");
-        debugPrint(i + 1);
-        debugPrint(" on GPIO ");
-        debugPrint(buttonPins[i]);
-        debugPrintln(" pressed");
+        // If the button is pressed (HIGH with external pull-down)
+        if (buttonStates[i] == HIGH) {
+          debugPrint("Button ");
+          debugPrint(i + 1);
+          debugPrint(" on GPIO ");
+          debugPrint(buttonPins[i]);
+          debugPrintln(" pressed");
 
-        activeButton = i;
-        anyButtonPressed = true;
-        buttonPressed = true;
-        readyToSleep = false;
+          activeButton = i;
+          anyButtonPressed = true;
+          buttonPressed = true;
+          readyToSleep = false;
 
-        // Light up the LED with the color for this button
-        strip.setPixelColor(0, buttonColors[i]);
-        strip.show();
+// Light up the LED with the color for this button
+#if LED_MODE
+          strip.setPixelColor(0, buttonColors[i]);
+          strip.show();
+#endif
+        }
       }
-    }
     }
 
     // Keep track if any button is currently pressed
@@ -302,9 +309,11 @@ void loop() {
     buttonReleaseTime = millis();
     readyToSleep = true;
 
-    // Turn off the LED when button is released
+// Turn off the LED when button is released
+#if LED_MODE
     strip.setPixelColor(0, strip.Color(0, 0, 0));
     strip.show();
+#endif
 
     // Send final button states before preparing for sleep
     sendButtonStates();
@@ -331,9 +340,11 @@ void loop() {
     Serial.flush();
 #endif
 
-    // Make sure LED is off before sleep
+// Make sure LED is off before sleep
+#if LED_MODE
     strip.setPixelColor(0, strip.Color(0, 0, 0));
     strip.show();
+#endif
 
     // Enter deep sleep
     esp_deep_sleep_start();
