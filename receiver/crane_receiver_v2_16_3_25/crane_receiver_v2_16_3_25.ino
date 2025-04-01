@@ -8,16 +8,17 @@
 #include <LOLIN_I2C_MOTOR.h>
 #include <map>
 #include <string>
+#include <Adafruit_NeoPixel.h>
 
 // Map to store button states and their corresponding values
 // 0 = inactive/off, 1 = active/on
 std::map<std::string, int> buttons = {
   { "ANTICLOCKWISE", 0 },  // Controls rotation counter-clockwise
-  { "DOWN", 0 },           // Controls downward movement
-  { "OUT", 0 },            // Controls extension outward
-  { "CLOCKWISE", 0 },      // Controls rotation clockwise
-  { "UP", 0 },             // Controls upward movement
-  { "IN", 0 }              // Controls retraction inward
+  { "DOWN", 0 },        // Controls downward movement
+  { "OUT", 0 },         // Controls extension outward
+  { "CLOCKWISE", 0 },    // Controls rotation clockwise
+  { "UP", 0 },          // Controls upward movement
+  { "IN", 0 }           // Controls retraction inward
 };
 
 // Debug mode flag - enables/disables Serial output for debugging
@@ -26,23 +27,23 @@ std::map<std::string, int> buttons = {
 // Configuration structure to store all system settings
 struct Config {
   // OTA (Over-The-Air) Update Configuration
-  char hostname[32] = "crane-controller";  // Device hostname for network identification
-  char ota_password[32] = "xxx";              // Password for OTA updates
+  char hostname[32] = "crane-controller";   // Device hostname for network identification
+  char ota_password[32] = "xxx";        // Password for OTA updates
 
   // Motor Control Configuration
-  uint8_t motor_speed = 100;  // Default motor speed (0-100%)
+  uint8_t motor_speed = 100;   // Default motor speed (0-100%)
 
   // WiFi Network Configuration
   char wifi_ssid[32] = "the robot network";  // WiFi network name
-  char wifi_password[32] = "isaacasimov";    // WiFi network password
+  char wifi_password[32] = "isaacasimov";     // WiFi network password
 
   // MQTT Communication Configuration
-  char mqtt_server[32] = "robotmqtt";            // MQTT broker address
-  int mqtt_port = 1883;                          // MQTT broker port
-  char mqtt_user[32] = "public";                 // MQTT username
-  char mqtt_password[32] = "public";             // MQTT password
-  char mqtt_client_id[32] = "crane-controller";  // Unique MQTT client identifier
-  char mqtt_topic[32] = "crane/buttons";         // MQTT topic for receiving commands
+  char mqtt_server[32] = "robotmqtt";        // MQTT broker address
+  int mqtt_port = 1883;            // MQTT broker port
+  char mqtt_user[32] = "public";          // MQTT username
+  char mqtt_password[32] = "public";      // MQTT password
+  char mqtt_client_id[32] = "crane-controller"; // Unique MQTT client identifier
+  char mqtt_topic[32] = "crane/buttons";      // MQTT topic for receiving commands
 
   // System Timing Configuration
   int wifi_timeout = 20;    // WiFi connection timeout (seconds)
@@ -54,8 +55,8 @@ LOLIN_I2C_MOTOR motor1(0x20);  // First motor board at I2C address 0x20
 LOLIN_I2C_MOTOR motor2(0x21);  // Second motor board at I2C address 0x21
 
 // Network communication objects
-WiFiClient espClient;                // WiFi client for network communication
-PubSubClient mqttClient(espClient);  // MQTT client for message handling
+WiFiClient espClient;           // WiFi client for network communication
+PubSubClient mqttClient(espClient); // MQTT client for message handling
 
 // System state tracking
 unsigned long lastMessageTime = 0;  // Timestamp of last received MQTT message
@@ -69,6 +70,29 @@ const unsigned long MESSAGE_TIMEOUT = 1000;  // Timeout period in milliseconds (
 #define debugPrintln(message)  // Debug messages disabled
 #define debugPrint(message)    // Debug messages disabled
 #endif
+
+// NeoPixel LED configuration
+#define LED_PIN D4 // GPIO pin connected to the NeoPixel data line.
+#define LED_COUNT 7 // Number of LEDs in your NeoPixel strip.
+#define CENTER_LED 0
+#define STEPS_PER_CYCLE 12
+
+Adafruit_NeoPixel pixels(LED_COUNT, LED_PIN, NEO_GRB + NEO_KHZ800);
+
+int currentLED = 1;
+const uint32_t BRIGHT_RED = 0xFF0000;
+const uint32_t MID_RED = 0xA00000;
+const uint32_t DIM_RED = 0x500000;
+const uint32_t VERY_DIM_RED = 0x200000;
+
+unsigned long previousCenterBlinkMillis = 0;
+unsigned long previousAnimationMillis = 0;
+
+const long centerBlinkInterval = 1000;
+const long animationInterval = 60;
+
+bool centerLedState = false;
+bool animationRunning = true;
 
 // Attempts to connect to WiFi network with timeout
 bool connectToWiFi() {
@@ -267,6 +291,12 @@ void setup() {
   // Connect to MQTT broker
   connectToMQTT();
 
+    // Initialize NeoPixel
+  pixels.begin();
+  pixels.setBrightness(100);
+  pixels.clear();
+  pixels.show();
+
   debugPrintln("Setup complete");
 }
 
@@ -303,6 +333,26 @@ void loop() {
 
   // Process any pending MQTT messages
   mqttClient.loop();
+
+
+  unsigned long currentMillis = millis();
+  bool updateDisplay = false;
+
+  if (currentMillis - previousCenterBlinkMillis >= centerBlinkInterval) {
+    previousCenterBlinkMillis = currentMillis;
+    centerLedState = !centerLedState;
+    updateDisplay = true;
+  }
+
+  if (animationRunning && currentMillis - previousAnimationMillis >= animationInterval) {
+    previousAnimationMillis = currentMillis;
+    currentLED = (currentLED % STEPS_PER_CYCLE) + 1;
+    updateDisplay = true;
+  }
+
+  if (updateDisplay) {
+    updateLEDs();
+  }
 
   // Small delay to prevent overwhelming the system
   delay(10);
@@ -358,4 +408,40 @@ void setupOTA() {
   // Start OTA service
   ArduinoOTA.begin();
   debugPrintln("OTA Update Service Started");
+}
+
+
+
+void updateLEDs() {
+  pixels.clear();
+  if (centerLedState) {
+    pixels.setPixelColor(CENTER_LED, MID_RED);
+  }
+
+  int mainLED = ((currentLED - 1) / 2) + 1;
+
+  if (currentLED % 2 == 1) {
+    pixels.setPixelColor(mainLED, BRIGHT_RED);
+
+    int prevLED = (mainLED == 1) ? 6 : mainLED - 1;
+    int prevPrevLED = (prevLED == 1) ? 6 : prevLED - 1;
+
+    pixels.setPixelColor(prevLED, MID_RED);
+    pixels.setPixelColor(prevPrevLED, DIM_RED);
+
+    int prevPrevPrevLED = (prevPrevLED == 1) ? 6 : prevPrevLED - 1;
+    pixels.setPixelColor(prevPrevPrevLED, VERY_DIM_RED);
+  } else {
+    int nextLED = (mainLED == 6) ? 1 : mainLED + 1;
+
+    pixels.setPixelColor(mainLED, BRIGHT_RED);
+    pixels.setPixelColor(nextLED, MID_RED);
+
+    int prevLED = (mainLED == 1) ? 6 : mainLED - 1;
+    int prevPrevLED = (prevLED == 1) ? 6 : prevLED - 1;
+
+    pixels.setPixelColor(prevLED, DIM_RED);
+    pixels.setPixelColor(prevPrevLED, VERY_DIM_RED);
+  }
+  pixels.show();
 }
