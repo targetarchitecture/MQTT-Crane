@@ -148,8 +148,7 @@ void stopAllMotors() {
 // Controls motor movement based on button states
 void controlMotor() {
   // Rotation control (Motor A on first board)
-  //FIX THE TRANSMITTER
-  if (buttons["ANTICLOCKWISE"] == 1 && buttons["CLOCKWISE"] == 1) {
+  if (buttons["ANTICLOCKWISE"] == 1 && buttons["CLOCKWISE"] == 0) {
     motor1.changeStatus(MOTOR_CH_A, MOTOR_STATUS_CCW);
     motor1.changeDuty(MOTOR_CH_A, config.motor_speed);
   }
@@ -174,18 +173,17 @@ void controlMotor() {
     motor1.changeStatus(MOTOR_CH_B, MOTOR_STATUS_STOP);
   }
 
-
   // Extension control (Motor A on second board)
   if (buttons["IN"] == 1 && buttons["OUT"] == 0) {
-    motor2.changeStatus(MOTOR_CH_A, MOTOR_STATUS_CCW);
-    motor2.changeDuty(MOTOR_CH_A, config.motor_speed);
+    motor2.changeStatus(MOTOR_CH_B, MOTOR_STATUS_CCW);
+    motor2.changeDuty(MOTOR_CH_B, config.motor_speed);
   }
   if (buttons["UP"] == 0 && buttons["OUT"] == 1) {
-    motor2.changeStatus(MOTOR_CH_A, MOTOR_STATUS_CW);
-    motor2.changeDuty(MOTOR_CH_A, config.motor_speed);
+    motor2.changeStatus(MOTOR_CH_B, MOTOR_STATUS_CW);
+    motor2.changeDuty(MOTOR_CH_B, config.motor_speed);
   }
   if (buttons["UP"] == 0 && buttons["OUT"] == 0) {
-    motor2.changeStatus(MOTOR_CH_A, MOTOR_STATUS_STOP);
+    motor2.changeStatus(MOTOR_CH_B, MOTOR_STATUS_STOP);
   }
 }
 
